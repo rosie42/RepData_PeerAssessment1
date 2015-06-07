@@ -8,18 +8,98 @@ output:
 
 ## Loading and preprocessing the data
 
+Once the working directory is set to point to the folder containing the data, the standard read.csv() is used. The date attribute is coded as a Date object for convenience later.
 
+```{r read data}
+
+activity <- read.csv("activity.csv")
+activity$date <- as.Date(activity$date)
+```
 
 ## What is mean total number of steps taken per day?
 
+Using plyr we aggregate the interval measurements into total measured steps per day.  This report was written using an older package of R, thus the warnings below. The processing is unaffected.
 
+```{r aggregateSteps}
+require(plyr)
+tot_activity <- ddply(activity, .(date), summarize, tot_steps = sum(steps, na.rm = TRUE))
+```
+
+From the aggregated data we can directly produce a histogram showing distribution of measured steps each day.
+```{r histogram}
+hist(tot_activity$tot_steps, col="blue", xlab = "Steps per Day", main = "Histogram of Steps per Day")
+```
+
+Similarly, the mean and median of measured steps can be directly calculated.
+```{r meanMeadian}
+mean(tot_activity$tot_steps, na.rm = TRUE)
+median(tot_activity$tot_steps, na.rm = TRUE)
+```
 
 ## What is the average daily activity pattern?
+Again using the plyr package we can calculate the mean number of measured steps for each 5-minute interval
 
+```{r meanInterval}
+interval_activity <- ddply(activity, .(interval), summarize, avg_steps = mean(steps, na.rm = TRUE))
+```
 
+Below is a time series plot of the average number of measured steps per 5-minute interval:
+
+```{r intervalPlot}
+plot(interval_activity, type = "l", xlab = "5-minute Interval", ylab = "Average Measured Steps", main = "Average Measured Steps per 5-minute Interval")
+```
+
+We see a large spike in the 800 range of the plot and can calculate the interval with the maximum average measured steps: 
+
+```{r maxInterval}
+interval_activity[interval_activity$avg_steps==max(interval_activity$avg_steps),]
+```
 
 ## Imputing missing values
+Using the original data set we can compute the number of missing values:
+```{r missingValues}
+sum(is.na(activity$steps))
+```
 
+Since activity levels vary across intervals as seen above, it is appropriate to impute missing values using an average of interval measurements.  Moreover, since mean is suceptible to bias due to extreme values we will use the median of the interval to impute the missing value.  This can be seen in the code block below:
+```{r imputeMissing}
+imp_activity <- activity
+median_steps <- ddply(activity, .(interval), summarize, avg_steps = median(steps, na.rm = TRUE))
+imp_activity[is.na(imp_activity$steps),"steps"] <- median_steps[match(imp_activity[is.na(imp_activity$steps),"interval"], interval_activity$interval),"avg_steps"]
+```
 
+Recalculating steps per day we see that very little has changed in the overall distribution:
+
+```{r impHistogram}
+tot_imp_activity <- ddply(imp_activity, .(date), summarize, tot_steps = sum(steps))
+hist(tot_imp_activity$tot_steps, col="green", xlab = "Steps per Day", main = "Histogram of Steps per Day With Missing Values Imputed")
+```
+
+The mean has increased slightly however the median remains unaffected:
+
+```{r impMeanMedian}
+mean(tot_imp_activity$tot_steps)
+median(tot_imp_activity$tot_steps)
+```
+
+Overall there is little impact from imputing missing values.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+First we create the new factor in the data set with imputed values:
+```{r weekendFactor}
+imp_activity$weekend <- 0
+imp_activity[weekdays(imp_activity$date)=="Saturday" | weekdays(imp_activity$date)=="Sunday","weekend"] <- 1
+imp_activity$weekend <- factor(imp_activity$weekend, levels=c(0,1), labels=c("weekday","weekend"))
+```
+
+We see in the panel plot below that there are very different activity profiles between weekdays and weekends:
+
+```{r weekendPanel}
+weekend_activity <- ddply(imp_activity, .(interval,weekend), summarize, avg_steps = mean(steps, na.rm = TRUE))
+
+par(mfrow=c(2,1), mar=c(4, 0, 1, 1), oma=c(1,5,4,3))
+plot(weekend_activity[weekend_activity$weekend=="weekend",c("interval","avg_steps")], type = "l", xlab = "Average Weekend Steps per 5-minute Interval", ylab = "")
+plot(weekend_activity[weekend_activity$weekend=="weekday",c("interval","avg_steps")], type = "l", xlab = "Average Weekday Steps per 5-minute Interval", ylab = "")
+title(main = "Average Steps per 5-minute Interval Weekend vs. Weekday", ylab = "Average Steps", outer = TRUE)
+```
